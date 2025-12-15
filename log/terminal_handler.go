@@ -39,7 +39,7 @@ func TerminalHandler(wr io.Writer, opts ...FormatOption) slog.Handler {
 		cfg: &FormatConfig{
 			UseColor:      false,
 			IncludeSource: false,
-			ExcludeTime:   true,
+			ExcludeTime:   false,
 			SourceRelDir:  "",
 		},
 	}

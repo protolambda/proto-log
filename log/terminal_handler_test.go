@@ -14,6 +14,12 @@ func TestTerminalHandler(t *testing.T) {
 	logger.Debug("Hello world", "foo", "1", "bar", 2)
 	got := string(buf.Bytes())
 	t.Log(got)
+
+	// date/timestamp artifacts, ensuring it is included by default
+	assertSubstring(t, got, `-`)
+	assertSubstring(t, got, `|`)
+	assertSubstring(t, got, `:`)
+
 	assertSubstring(t, got, `DEBUG`)
 	assertSubstring(t, got, `Hello world`)
 	assertSubstring(t, got, `foo=1`)

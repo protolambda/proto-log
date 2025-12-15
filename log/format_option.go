@@ -29,16 +29,16 @@ func WithColor(useColor bool) FormatOption {
 }
 
 // WithIncludeSource sets FormatConfig.IncludeSource
-func WithIncludeSource(show bool) FormatOption {
+func WithIncludeSource(includeSource bool) FormatOption {
 	return func(cfg *FormatConfig) {
-		cfg.IncludeSource = show
+		cfg.IncludeSource = includeSource
 	}
 }
 
 // WithExcludeTime sets FormatConfig.ExcludeTime
-func WithExcludeTime(show bool) FormatOption {
+func WithExcludeTime(excludeTime bool) FormatOption {
 	return func(cfg *FormatConfig) {
-		cfg.ExcludeTime = show
+		cfg.ExcludeTime = excludeTime
 	}
 }
 
