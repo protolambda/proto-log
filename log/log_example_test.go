@@ -2,6 +2,7 @@ package log_test
 
 import (
 	"context"
+	"log/slog"
 	"os"
 
 	"github.com/protolambda/proto-log/log"
@@ -17,7 +18,7 @@ func ExampleWithIncludeSource() {
 	logger := log.New(h)
 	logger.Info("Hello world", "foo", 1, "bar", true)
 	// Output:
-	// lvl=info source=log_example_test.go:18 msg="Hello world" foo=1 bar=true
+	// lvl=info source=log_example_test.go:19 msg="Hello world" foo=1 bar=true
 }
 
 func ExampleNew() {
@@ -56,18 +57,30 @@ func ExampleLevelHandler_SetMinLevel() {
 
 	subLogger := logger.With("name", "alice")
 	subLogger.Info("Report from sub-logger")
-	// By getting the LevelHandler, the level of this logger can be adjusted
-	lh, ok := log.FindHandler[*log.LevelHandler](subLogger.Handler())
+	subLogger.Debug("Hidden debug message")
+
+	// By getting the LevelHandler, the level of this logger can be adjusted.
+	// The level is shared with loggers derived through With.
+	lh, ok := log.FindHandler[*log.LevelHandler](logger.Handler())
 	if !ok {
 		panic("log handler does not have a LevelHandler mod")
 	}
 	lh.SetMinLevel(log.LevelDebug)
 
-	logger.Debug("Hidden debug message")
+	logger.Debug("Hello debug world")
 	subLogger.Debug("Hello debug world from sub-logger")
 
 	// Output:
 	// INFO  Hello info world                         foobar=123
 	// INFO  Report from sub-logger                   name=alice
+	// DEBUG Hello debug world
 	// DEBUG Hello debug world from sub-logger        name=alice
+}
+
+func ExampleTerminalHandler_groups() {
+	h := log.TerminalHandler(os.Stdout, log.WithExcludeTime(true))
+	logger := log.New(h).WithGroup("req").With("id", 7)
+	logger.Info("handled", slog.Group("resp", "status", 200))
+	// Output:
+	// INFO  handled                                  req.id=7 req.resp.status=200
 }

@@ -3,19 +3,24 @@ package log
 import (
 	"context"
 	"log/slog"
-	"sync/atomic"
 )
 
+// LevelHandler filters records below a minimum level.
+//
+// The level is shared with every handler derived through WithAttrs or WithGroup,
+// so changing it on any logger in a With-chain changes it for the whole chain,
+// like a [slog.LevelVar] passed to the standard handlers.
+// To give a derived logger its own (stricter) level, wrap its handler with another [LevelMod].
 type LevelHandler struct {
 	inner slog.Handler
-	lvl   atomic.Int64 // slog.Level
+	lvl   *slog.LevelVar
 }
 
 var _ Handler = (*LevelHandler)(nil)
 
 func LevelMod(minLvl slog.Level) HandlerMod {
 	return func(h slog.Handler) slog.Handler {
-		out := &LevelHandler{inner: h}
+		out := &LevelHandler{inner: h, lvl: new(slog.LevelVar)}
 		out.SetMinLevel(minLvl)
 		return out
 	}
@@ -37,25 +42,20 @@ func (h *LevelHandler) Handle(ctx context.Context, r slog.Record) error {
 }
 
 func (h *LevelHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	out := &LevelHandler{
-		inner: h.inner.WithAttrs(attrs),
-	}
-	out.SetMinLevel(h.MinLevel())
-	return out
+	return &LevelHandler{inner: h.inner.WithAttrs(attrs), lvl: h.lvl}
 }
 
 func (h *LevelHandler) WithGroup(name string) slog.Handler {
-	out := &LevelHandler{
-		inner: h.inner.WithGroup(name),
-	}
-	out.SetMinLevel(h.MinLevel())
-	return out
+	return &LevelHandler{inner: h.inner.WithGroup(name), lvl: h.lvl}
 }
 
+// MinLevel returns the minimum level. It is safe for concurrent use.
 func (h *LevelHandler) MinLevel() slog.Level {
-	return slog.Level(h.lvl.Load())
+	return h.lvl.Level()
 }
 
+// SetMinLevel changes the minimum level for every handler sharing this level,
+// i.e. all handlers derived from the same [LevelMod] application. It is safe for concurrent use.
 func (h *LevelHandler) SetMinLevel(lvl slog.Level) {
-	h.lvl.Store(int64(lvl))
+	h.lvl.Set(lvl)
 }
