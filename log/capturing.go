@@ -3,6 +3,8 @@ package log
 import (
 	"context"
 	"log/slog"
+	"slices"
+	"sync"
 )
 
 type Capturer interface {
@@ -10,6 +12,7 @@ type Capturer interface {
 	Clear()
 	FindLog(filters ...LogFilter) *CapturedRecord
 	FindLogs(filters ...LogFilter) []*CapturedRecord
+	Records() []*CapturedRecord
 }
 
 var _ Capturer = (*CapturingHandler)(nil)
@@ -67,20 +70,25 @@ func (r *CapturedRecord) AttrValue(key string) (v any) {
 	return
 }
 
-// CapturingHandler provides a log handler that captures all log records and optionally forwards them to a delegate.
-// Note that it is not thread safe.
+// CapturingHandler provides a log handler that captures all log records and forwards them to a delegate.
+// It is safe for concurrent use: handlers derived through WithAttrs and WithGroup share the captured records.
 type CapturingHandler struct {
 	handler slog.Handler
-	Logs    *[]*CapturedRecord // shared among derived CapturingHandlers
+	store   *captureStore // shared among derived CapturingHandlers
 	// attrs are inherited log record attributes, from a logger that this CapturingHandler may be derived from
 	attrs *CapturedAttrs
+}
+
+type captureStore struct {
+	mu   sync.Mutex
+	logs []*CapturedRecord
 }
 
 var _ Handler = (*CapturingHandler)(nil)
 
 func CapturingMod() HandlerMod {
 	return func(h slog.Handler) slog.Handler {
-		return &CapturingHandler{handler: h, Logs: new([]*CapturedRecord)}
+		return &CapturingHandler{handler: h, store: new(captureStore)}
 	}
 }
 
@@ -89,17 +97,18 @@ func (c *CapturingHandler) Unwrap() slog.Handler {
 }
 
 func (c *CapturingHandler) Handle(ctx context.Context, r slog.Record) error {
-	*c.Logs = append(*c.Logs, &CapturedRecord{
-		Parent: c.attrs,
-		Record: &r,
-	})
+	clone := r.Clone() // the caller may reuse the attrs storage after Handle returns
+	rec := &CapturedRecord{Parent: c.attrs, Record: &clone}
+	c.store.mu.Lock()
+	c.store.logs = append(c.store.logs, rec)
+	c.store.mu.Unlock()
 	return c.handler.Handle(ctx, r)
 }
 
 func (c *CapturingHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	return &CapturingHandler{
 		handler: c.handler.WithAttrs(attrs),
-		Logs:    c.Logs,
+		store:   c.store,
 		attrs: &CapturedAttrs{
 			Parent:     c.attrs,
 			Attributes: attrs,
@@ -107,10 +116,13 @@ func (c *CapturingHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	}
 }
 
+// WithGroup derives a handler that keeps the inherited attributes.
+// Captured attribute keys are not qualified by group names.
 func (c *CapturingHandler) WithGroup(name string) slog.Handler {
 	return &CapturingHandler{
 		handler: c.handler.WithGroup(name),
-		Logs:    c.Logs,
+		store:   c.store,
+		attrs:   c.attrs,
 	}
 }
 
@@ -118,20 +130,22 @@ func (c *CapturingHandler) Enabled(ctx context.Context, level slog.Level) bool {
 	return c.handler.Enabled(ctx, level)
 }
 
+// Records returns a snapshot of all captured records, in capture order.
+func (c *CapturingHandler) Records() []*CapturedRecord {
+	c.store.mu.Lock()
+	defer c.store.mu.Unlock()
+	return slices.Clone(c.store.logs)
+}
+
 func (c *CapturingHandler) Clear() {
-	*c.Logs = (*c.Logs)[:0] // reuse slice
+	c.store.mu.Lock()
+	defer c.store.mu.Unlock()
+	c.store.logs = nil // don't reuse the slice: earlier Records snapshots may still reference it
 }
 
 func (c *CapturingHandler) FindLog(filters ...LogFilter) *CapturedRecord {
-	for _, record := range *c.Logs {
-		match := true
-		for _, filter := range filters {
-			if !filter(record) {
-				match = false
-				break
-			}
-		}
-		if match {
+	for _, record := range c.Records() {
+		if matchAll(record, filters) {
 			return record
 		}
 	}
@@ -140,17 +154,19 @@ func (c *CapturingHandler) FindLog(filters ...LogFilter) *CapturedRecord {
 
 func (c *CapturingHandler) FindLogs(filters ...LogFilter) []*CapturedRecord {
 	var logs []*CapturedRecord
-	for _, record := range *c.Logs {
-		match := true
-		for _, filter := range filters {
-			if !filter(record) {
-				match = false
-				break
-			}
-		}
-		if match {
+	for _, record := range c.Records() {
+		if matchAll(record, filters) {
 			logs = append(logs, record)
 		}
 	}
 	return logs
+}
+
+func matchAll(record *CapturedRecord, filters []LogFilter) bool {
+	for _, filter := range filters {
+		if !filter(record) {
+			return false
+		}
+	}
+	return true
 }

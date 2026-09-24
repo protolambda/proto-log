@@ -21,9 +21,9 @@ func (h *discardHandler) Enabled(_ context.Context, level slog.Level) bool {
 }
 
 func (h *discardHandler) WithGroup(name string) slog.Handler {
-	panic("not implemented")
+	return h
 }
 
 func (h *discardHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	return &discardHandler{}
+	return h
 }

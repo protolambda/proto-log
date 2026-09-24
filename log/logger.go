@@ -248,13 +248,15 @@ func (l *loggerImpl) Context() context.Context {
 }
 
 // WithContext creates a clone, with the given context as new default context.
+// A nil ctx resets the default context to [context.Background].
+// The receiver is not modified.
 func (l *loggerImpl) WithContext(ctx context.Context) Logger {
-	c := l.clone()
-	c.handler = l.handler.WithAttrs(nil)
-	h, ok := FindHandler[*ContextHandler](c.handler)
-	if !ok {
-		panic("expected context handler")
+	inner := l.handler
+	if h, ok := inner.(*ContextHandler); ok {
+		// replace the outermost ContextHandler, instead of stacking another one
+		inner = h.inner
 	}
-	h.SetContext(ctx)
+	c := l.clone()
+	c.handler = ContextModWith(ctx)(inner)
 	return c
 }

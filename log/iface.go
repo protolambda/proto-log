@@ -69,6 +69,11 @@ type ExtendedSLogLogger interface {
 	CritContext(ctx context.Context, msg string, args ...any)
 }
 
+// Logger is the full logging frontend of this package, mirroring [slog.Logger] with extensions.
+// Code that only emits logs may prefer to depend on a narrower interface, such as [SLogLogger].
+//
+// Like [slog.Logger], a Logger does not report errors returned by its handler.
+// Wrap the output [io.Writer] (or the handler) to observe output failures.
 type Logger interface {
 	ExtendedSLogLogger
 
