@@ -35,14 +35,9 @@ type TerminalStringer interface {
 	TerminalString() string
 }
 
-// format assumes that h.b.Reset() was called already.
-func (h *terminalHandler) format(r slog.Record) []byte {
-	if h.buf == nil {
-		back := make([]byte, 0, 30+termMsgJust)
-		h.buf = bytes.NewBuffer(back)
-	}
-	b := h.buf
-
+// format writes the record to b, followed by the inherited attributes and the given record attributes.
+// The caller must hold h.out.mu.
+func (h *terminalHandler) format(b *bytes.Buffer, r slog.Record, recordAttrs []slog.Attr) {
 	msg := escapeMessage(r.Message)
 	var color = ""
 	if h.cfg.UseColor {
@@ -101,16 +96,15 @@ func (h *terminalHandler) format(r slog.Record) []byte {
 	// try to justify the log output for short messages
 	//length := utf8.RuneCountInString(msg)
 	length := len(msg)
-	if (r.NumAttrs()+len(h.attrs)) > 0 && length < termMsgJust {
+	if (len(recordAttrs)+len(h.attrs)) > 0 && length < termMsgJust {
 		b.Write(spaces[:termMsgJust-length])
 	}
 	// print the attributes
-	h.formatAttributes(b, r, color)
-
-	return b.Bytes()
+	h.formatAttributes(b, recordAttrs, color)
 }
 
-func (h *terminalHandler) formatAttributes(buf *bytes.Buffer, r slog.Record, color string) {
+func (h *terminalHandler) formatAttributes(buf *bytes.Buffer, recordAttrs []slog.Attr, color string) {
+	fieldPadding := h.out.fieldPadding
 	writeAttr := func(attr slog.Attr, last bool) {
 		buf.WriteByte(' ')
 
@@ -124,12 +118,12 @@ func (h *terminalHandler) formatAttributes(buf *bytes.Buffer, r slog.Record, col
 		}
 		val := FormatSlogValue(attr.Value, buf.AvailableBuffer())
 
-		padding := h.fieldPadding[attr.Key]
+		padding := fieldPadding[attr.Key]
 
 		length := utf8.RuneCount(val)
 		if padding < length && length <= termCtxMaxPadding {
 			padding = length
-			h.fieldPadding[attr.Key] = padding
+			fieldPadding[attr.Key] = padding
 		}
 		buf.Write(val)
 		if !last && padding > length {
@@ -137,16 +131,15 @@ func (h *terminalHandler) formatAttributes(buf *bytes.Buffer, r slog.Record, col
 		}
 	}
 	var n = 0
-	var nAttrs = len(h.attrs) + r.NumAttrs()
+	var nAttrs = len(h.attrs) + len(recordAttrs)
 	for _, attr := range h.attrs {
 		writeAttr(attr, n == nAttrs-1)
 		n++
 	}
-	r.Attrs(func(attr slog.Attr) bool {
+	for _, attr := range recordAttrs {
 		writeAttr(attr, n == nAttrs-1)
 		n++
-		return true
-	})
+	}
 	buf.WriteByte('\n')
 }
 

@@ -23,7 +23,8 @@ type T interface {
 
 // TestLogger creates a TerminalHandler configured for testing.
 // All log-output is written to the T.Output().
-// Color is enabled.
+// Color is disabled, since test output is usually not a terminal.
+// Use [TerminalHandler] with [WithColor] directly to get colored output.
 // Source-info is enabled.
 // Crit-level logs will be followed up with a T.FailNow().
 func TestLogger(t T, mods ...HandlerMod) Logger {
@@ -35,7 +36,6 @@ func TestLogger(t T, mods ...HandlerMod) Logger {
 		return nil
 	}
 	h = TerminalHandler(t.Output(),
-		WithColor(true),
 		WithIncludeSource(true),
 		WithSourceRelDir(wd))
 	for _, m := range mods {
